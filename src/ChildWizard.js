@@ -1,4 +1,3 @@
-// src/ChildWizard.js
 import { useState } from "react";
 import { db } from "./firebase";
 import { collection, addDoc, updateDoc, doc } from "firebase/firestore";
@@ -12,6 +11,7 @@ const predefinedTasks = {
   "13-15": ["Samodzielne odrabianie lekcji", "Pranie swoich ubrań", "Pomoc w kuchni"],
   "16-18": ["Zarządzanie swoim czasem", "Pomoc w kuchni i obowiązkach domowych", "Samodzielne zakupy"]
 };
+
 const daysOfWeek = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
 
 export default function ChildWizard({ parentId }) {

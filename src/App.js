@@ -1,4 +1,3 @@
-// src/App.js
 import { useState, useEffect } from "react";
 import { auth } from "./firebase";
 import Login from "./Login";
@@ -9,7 +8,6 @@ function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Obsługa logowania Firebase
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(u => {
       setUser(u);
@@ -26,10 +24,8 @@ function App() {
     );
   }
 
-  // Jeśli użytkownik nie zalogowany → pokaz logowanie
   if (!user) return <Login onLogin={setUser} />;
 
-  // Jeśli zalogowany → pokaz wizzard dla dzieci
   return <ChildWizard parentId={user.uid} />;
 }
 
