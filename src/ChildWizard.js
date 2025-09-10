@@ -14,15 +14,25 @@ const predefinedTasks = {
 
 const daysOfWeek = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
 
+function calculateAge(birthday) {
+  const today = new Date();
+  const birthDate = new Date(birthday);
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const m = today.getMonth() - birthDate.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
+  return age;
+}
+
 export default function ChildWizard({ parentId }) {
   const [children, setChildren] = useState([]);
   const [name, setName] = useState("");
-  const [age, setAge] = useState("");
+  const [birthDate, setBirthDate] = useState("");
 
   const addChildToList = () => {
-    if(!name || !age) return;
-    setChildren([...children, { name, age: Number(age) }]);
-    setName(""); setAge("");
+    if(!name || !birthDate) return;
+    const age = calculateAge(birthDate);
+    setChildren([...children, { name, birthDate, age }]);
+    setName(""); setBirthDate("");
   };
 
   const submitChildren = async () => {
@@ -32,6 +42,7 @@ export default function ChildWizard({ parentId }) {
     for (const child of children) {
       const childDoc = await addDoc(collection(db, "children"), {
         name: child.name,
+        birthDate: child.birthDate,
         age: child.age
       });
       childIds.push(childDoc.id);
@@ -63,18 +74,24 @@ export default function ChildWizard({ parentId }) {
           <Form.Control value={name} onChange={e=>setName(e.target.value)} />
         </Form.Group>
         <Form.Group className="mb-2">
-          <Form.Label>Wiek</Form.Label>
-          <Form.Control type="number" value={age} onChange={e=>setAge(e.target.value)} />
+          <Form.Label>Data urodzenia</Form.Label>
+          <Form.Control type="date" value={birthDate} onChange={e=>setBirthDate(e.target.value)} />
         </Form.Group>
         <Button onClick={addChildToList}>Dodaj do listy</Button>
       </Form>
 
       <h4>Lista dzieci do dodania:</h4>
       <ListGroup className="mb-3">
-        {children.map((c,i)=><ListGroup.Item key={i}>{c.name}, {c.age} lat</ListGroup.Item>)}
+        {children.map((c,i)=>
+          <ListGroup.Item key={i}>
+            {c.name}, {c.age} lat (urodzony/a: {c.birthDate})
+          </ListGroup.Item>
+        )}
       </ListGroup>
 
-      <Button onClick={submitChildren} disabled={children.length===0}>Zakończ konfigurację</Button>
+      <Button onClick={submitChildren} disabled={children.length===0}>
+        Zakończ konfigurację
+      </Button>
     </Container>
   );
 }
