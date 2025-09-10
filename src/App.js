@@ -1,23 +1,27 @@
 import { useState, useEffect } from "react";
-import { auth } from "./firebase";
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import { auth, db } from "./firebase";
 import Login from "./Login";
+import Register from "./Register";
 import ChildWizard from "./ChildWizard";
 import ParentDashboard from "./ParentDashboard";
+import Coupons from "./Coupons";
+import NewAccountConfirmation from "./NewAccountConfirmation";
 import { Container, Spinner } from "react-bootstrap";
 
 function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [setupDone, setSetupDone] = useState(false); // czy zakończono ChildWizard
+  const [setupDone, setSetupDone] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged(u => {
+    const unsubscribe = auth.onAuthStateChanged(async (u) => {
       setUser(u);
       setLoading(false);
       if (u) {
-        // tu można pobrać flagę z Firestore: czy rodzic już skonfigurował dzieci
-        // dla uproszczenia zakładamy false i ustawiamy po ChildWizard
-        setSetupDone(false);
+        // Pobierz flagę z Firestore: czy rodzic zakończył konfigurację dzieci
+        const userDoc = await db.collection("users").doc(u.uid).get();
+        setSetupDone(userDoc.exists && userDoc.data().setupDone);
       }
     });
     return unsubscribe;
@@ -31,11 +35,28 @@ function App() {
     );
   }
 
-  if (!user) return <Login onLogin={setUser} />;
+  return (
+    <Router>
+      <Routes>
+        <Route path="/login" element={!user ? <Login onLogin={setUser} /> : <Navigate to="/" />} />
+        <Route path="/register" element={!user ? <Register /> : <Navigate to="/" />} />
+        <Route path="/confirmation" element={<NewAccountConfirmation />} />
 
-  if (!setupDone) return <ChildWizard parentId={user.uid} onFinish={() => setSetupDone(true)} />;
+        {/* Chronione routingi */}
+        <Route
+          path="/"
+          element={
+            user ? (setupDone ? <ParentDashboard user={user} /> : <ChildWizard parentId={user.uid} onFinish={() => setSetupDone(true)} />)
+                 : <Navigate to="/login" />
+          }
+        />
+        <Route path="/coupons" element={user ? <Coupons user={user} /> : <Navigate to="/login" />} />
 
-  return <ParentDashboard />;
+        {/* Fallback */}
+        <Route path="*" element={<Navigate to="/" />} />
+      </Routes>
+    </Router>
+  );
 }
 
 export default App;

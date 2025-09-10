@@ -1,23 +1,39 @@
 import { Navbar, Container, Nav, Dropdown } from "react-bootstrap";
-import { GearFill } from "react-bootstrap-icons";
+import { auth } from "./firebase";
+import { useNavigate } from "react-router-dom";
 
-export default function NavbarWithSettings({ user, onShowCoupons, onLogout }) {
+export default function NavBarWithSettings({ user }) {
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    await auth.signOut();
+    navigate("/login");
+  };
+
   return (
-    <Navbar bg="primary" variant="dark" expand="lg">
+    <Navbar bg="primary" variant="dark" expand="lg" className="mb-3">
       <Container>
-        <Navbar.Brand>familyScoring</Navbar.Brand>
-        <Nav className="ms-auto d-flex align-items-center">
-          <span className="me-3 text-white">{user?.email}</span>
-          <Dropdown align="end">
-            <Dropdown.Toggle variant="secondary" id="dropdown-settings">
-              <GearFill />
-            </Dropdown.Toggle>
-            <Dropdown.Menu>
-              <Dropdown.Item onClick={onShowCoupons}>Definiowanie bonów</Dropdown.Item>
-              <Dropdown.Divider />
-              <Dropdown.Item onClick={onLogout}>Wyloguj się</Dropdown.Item>
-            </Dropdown.Menu>
-          </Dropdown>
+        <Navbar.Brand href="/">familyScoring</Navbar.Brand>
+        <Nav className="ms-auto">
+          {user ? (
+            <Dropdown align="end">
+              <Dropdown.Toggle variant="secondary" id="dropdown-settings">
+                {user.email} ⚙️
+              </Dropdown.Toggle>
+              <Dropdown.Menu>
+                <Dropdown.Item onClick={() => navigate("/coupons")}>
+                  Definiowanie bonów
+                </Dropdown.Item>
+                <Dropdown.Divider />
+                <Dropdown.Item onClick={handleLogout}>Wyloguj</Dropdown.Item>
+              </Dropdown.Menu>
+            </Dropdown>
+          ) : (
+            <>
+              <Nav.Link onClick={() => navigate("/login")}>Zaloguj się</Nav.Link>
+              <Nav.Link onClick={() => navigate("/register")}>Rejestracja</Nav.Link>
+            </>
+          )}
         </Nav>
       </Container>
     </Navbar>

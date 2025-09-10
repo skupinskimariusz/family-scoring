@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { auth, db } from "./firebase";
-import { doc, getDoc, collection, getDocs, addDoc, deleteDoc, updateDoc } from "firebase/firestore";
-import { Container, Navbar, Nav, Table, Form, Button, Accordion, Row, Col, ListGroup } from "react-bootstrap";
+import { doc, getDoc, collection, getDocs, addDoc, deleteDoc } from "firebase/firestore";
+import { Container, Tab, Tabs, Accordion, Table, Form, Button, Row, Col, ListGroup } from "react-bootstrap";
+import NavbarWithSettings from "./NavbarWithSettings";
 
 const days = ["Pon","Wt","Śr","Czw","Pt","Sob","Nd"];
 const categories = ["Poranek","Po szkole","Wieczór"];
@@ -11,13 +12,11 @@ export default function ParentDashboard() {
   const [children, setChildren] = useState([]);
   const [activeChild, setActiveChild] = useState(null);
   const [weeklySchedule, setWeeklySchedule] = useState({});
+  const [scores, setScores] = useState({}); // { taskId: score }
   const [penalties, setPenalties] = useState([]);
   const [rewards, setRewards] = useState([]);
-  const [taskScores, setTaskScores] = useState({}); // { "Poranek-Umycie zębów-Pon": 1 }
-  const [newPenalty, setNewPenalty] = useState({ name: "", points: -1, date: "" });
-  const [newReward, setNewReward] = useState({ name: "", points: 1, date: "" });
+  const [totalPoints, setTotalPoints] = useState(0);
 
-  // Pobranie dzieci
   useEffect(() => {
     if (!user) return;
     const fetchChildren = async () => {
@@ -36,157 +35,103 @@ export default function ParentDashboard() {
     fetchChildren();
   }, [user]);
 
-  // Pobranie harmonogramu i punktów
   useEffect(() => {
     if (!activeChild) return;
-
-    const fetchData = async () => {
+    const fetchChildData = async () => {
       // Harmonogram
-      const snap = await getDocs(collection(db, "children", activeChild, "weeklySchedule"));
+      const scheduleSnapshot = await getDocs(collection(db, "children", activeChild, "weeklySchedule"));
       const schedule = {};
-      const scores = {};
-      snap.forEach(docSnap => {
-        const data = docSnap.data();
-        schedule[docSnap.id] = data;
-        // Inicjalizacja taskScores
-        categories.forEach(cat => {
-          const tasksCat = data.tasks?.[cat.toLowerCase().replace(" ","")] || [];
-          tasksCat.forEach(task => {
-            days.forEach(day => {
-              const key = `${cat}-${task}-${day}`;
-              scores[key] = 0; // default 0
-            });
-          });
-        });
+      scheduleSnapshot.forEach(doc => {
+        schedule[doc.id] = doc.data();
       });
       setWeeklySchedule(schedule);
-      setTaskScores(scores);
 
       // Kary
-      const penaltySnap = await getDocs(collection(db, "children", activeChild, "penalties"));
-      setPenalties(penaltySnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      const penaltiesSnapshot = await getDocs(collection(db, "children", activeChild, "penalties"));
+      const fetchedPenalties = [];
+      penaltiesSnapshot.forEach(doc => fetchedPenalties.push({ id: doc.id, ...doc.data() }));
+      setPenalties(fetchedPenalties);
 
       // Nagrody
-      const rewardSnap = await getDocs(collection(db, "children", activeChild, "rewards"));
-      setRewards(rewardSnap.docs.map(d => ({ id: d.id, ...d.data() })));
-    };
+      const rewardsSnapshot = await getDocs(collection(db, "children", activeChild, "rewards"));
+      const fetchedRewards = [];
+      rewardsSnapshot.forEach(doc => fetchedRewards.push({ id: doc.id, ...doc.data() }));
+      setRewards(fetchedRewards);
 
-    fetchData();
+      // Reset scores
+      setScores({});
+    };
+    fetchChildData();
   }, [activeChild]);
 
-  const handleScoreChange = (key, value) => {
-    setTaskScores(prev => ({ ...prev, [key]: parseInt(value) }));
+  const handleScoreChange = (taskId, value) => {
+    const newScores = { ...scores, [taskId]: parseInt(value) };
+    setScores(newScores);
+    updateTotal(newScores, penalties, rewards);
   };
 
-  const totalPoints = () => {
-    let sum = 0;
-    Object.values(taskScores).forEach(v => sum += v);
-    penalties.forEach(p => sum += p.points);
-    rewards.forEach(r => sum += r.points);
-    return sum;
-  };
-
-  const addPenalty = async () => {
-    if (!newPenalty.name || !newPenalty.points) return;
-    const colRef = collection(db, "children", activeChild, "penalties");
-    const docRef = await addDoc(colRef, newPenalty);
-    setPenalties([...penalties, { id: docRef.id, ...newPenalty }]);
-    setNewPenalty({ name: "", points: -1, date: "" });
+  const addPenalty = async (name, points, date) => {
+    if (!name || !points || !date) return;
+    const docRef = await addDoc(collection(db, "children", activeChild, "penalties"), { name, points, date });
+    const updated = [...penalties, { id: docRef.id, name, points, date }];
+    setPenalties(updated);
+    updateTotal(scores, updated, rewards);
   };
 
   const removePenalty = async (id) => {
     await deleteDoc(doc(db, "children", activeChild, "penalties", id));
-    setPenalties(penalties.filter(p => p.id !== id));
+    const updated = penalties.filter(p => p.id !== id);
+    setPenalties(updated);
+    updateTotal(scores, updated, rewards);
   };
 
-  const addReward = async () => {
-    if (!newReward.name || !newReward.points) return;
-    const colRef = collection(db, "children", activeChild, "rewards");
-    const docRef = await addDoc(colRef, newReward);
-    setRewards([...rewards, { id: docRef.id, ...newReward }]);
-    setNewReward({ name: "", points: 1, date: "" });
+  const addReward = async (name, points, date) => {
+    if (!name || !points || !date) return;
+    const docRef = await addDoc(collection(db, "children", activeChild, "rewards"), { name, points, date });
+    const updated = [...rewards, { id: docRef.id, name, points, date }];
+    setRewards(updated);
+    updateTotal(scores, penalties, updated);
   };
 
   const removeReward = async (id) => {
     await deleteDoc(doc(db, "children", activeChild, "rewards", id));
-    setRewards(rewards.filter(r => r.id !== id));
+    const updated = rewards.filter(r => r.id !== id);
+    setRewards(updated);
+    updateTotal(scores, penalties, updated);
   };
 
-  // Funkcja zapisująca punkty zadań do Firestore
-const saveScores = async () => {
-  if (!activeChild) return;
+  const updateTotal = (taskScores, penaltiesArr, rewardsArr) => {
+    let sum = Object.values(taskScores).reduce((acc, val) => acc + val, 0);
+    sum += penaltiesArr.reduce((acc, p) => acc + parseInt(p.points), 0);
+    sum += rewardsArr.reduce((acc, r) => acc + parseInt(r.points), 0);
+    setTotalPoints(sum);
+  };
 
-  try {
-    for (const docId in weeklySchedule) {
-      const scheduleDocRef = doc(db, "children", activeChild, "weeklySchedule", docId);
-      // Pobieramy aktualny dokument
-      const data = weeklySchedule[docId];
-      // Tworzymy mapę scores dla tego dokumentu
-      const scoresForDoc = {};
-      categories.forEach(cat => {
-        const tasksCat = data.tasks?.[cat.toLowerCase().replace(" ","")] || [];
-        tasksCat.forEach(task => {
-          days.forEach(day => {
-            const key = `${cat}-${task}-${day}`;
-            if (taskScores[key] !== undefined) scoresForDoc[key] = taskScores[key];
-          });
-        });
-      });
-      // Aktualizujemy dokument
-      await updateDoc(scheduleDocRef, { scores: scoresForDoc });
-    }
-    alert("✅ Punkty zadań zapisane w Firestore!");
-  } catch (err) {
-    console.error("Błąd przy zapisie punktów:", err);
-    alert("⚠️ Wystąpił błąd przy zapisie punktów.");
-  }
-};
-
-
-  return (
-    <>
-      <Navbar bg="primary" variant="dark" className="mb-3">
-        <Container>
-          <Navbar.Brand>familyScoring</Navbar.Brand>
-          <Nav className="ms-auto">{user?.email}</Nav>
-        </Container>
-      </Navbar>
-
-      <Container>
-        <Accordion className="mb-4">
-          <Accordion.Item eventKey="0">
-            <Accordion.Header>📖 Legenda: system kar i nagród</Accordion.Header>
-            <Accordion.Body>
-              <ul>
-                <li><b>Punkty zadania:</b> -3 do 3</li>
-                <li><b>Kary:</b> punkty ujemne</li>
-                <li><b>Nagrody:</b> punkty dodatnie</li>
-                <li><b>Całkowity wynik:</b> suma punktów</li>
-              </ul>
-            </Accordion.Body>
-          </Accordion.Item>
-        </Accordion>
-
-        <Table bordered className="text-center align-middle">
-          <thead className="table-primary">
-            <tr>
-              <th>Obowiązek</th>
-              {days.map(d => <th key={d}>{d}</th>)}
-            </tr>
-          </thead>
-          <tbody>
-            {categories.map(cat => {
-              // Pobranie zadań z activeChild
-              const scheduleTasks = Object.values(weeklySchedule).flatMap(w => w.tasks?.[cat.toLowerCase().replace(" ","")] || []);
-              return scheduleTasks.map((task,i) => (
-                <tr key={`${cat}-${i}`}>
+  const renderTable = () => (
+    <Table bordered className="text-center align-middle">
+      <thead className="table-primary">
+        <tr>
+          <th>Obowiązek</th>
+          {days.map(d => <th key={d}>{d}</th>)}
+        </tr>
+      </thead>
+      <tbody>
+        {categories.map(cat => {
+          const tasksCat = Object.values(weeklySchedule).flatMap(w => w.tasks?.[cat.toLowerCase().replace(" ","")] || []);
+          return (
+            <tbody key={cat}>
+              <tr className="table-secondary">
+                <td colSpan={days.length+1} className="fw-bold">{cat}</td>
+              </tr>
+              {tasksCat.map((task, i) => (
+                <tr key={i}>
                   <td className="text-start">{task}</td>
                   {days.map(day => {
-                    const key = `${cat}-${task}-${day}`;
+                    const id = `${cat}-${task}-${day}`;
                     return (
                       <td key={day}>
-                        <Form.Select size="sm" value={taskScores[key] || 0} onChange={e=>handleScoreChange(key,e.target.value)}>
-                          {Array.from({length:7},(_,i)=>i-3).map(n => (
+                        <Form.Select size="sm" value={scores[id] || 0} onChange={e => handleScoreChange(id, e.target.value)}>
+                          {Array.from({length:7},(_,i)=>i-3).map(n=>(
                             <option key={n} value={n}>{n}</option>
                           ))}
                         </Form.Select>
@@ -194,54 +139,91 @@ const saveScores = async () => {
                     )
                   })}
                 </tr>
-              ))
-            })}
-          </tbody>
-        </Table>
-
-        <Row className="mt-4">
-          <Col>
-            <h4>⚠️ Kary</h4>
-            <ListGroup className="mb-3">
-              {penalties.map(p => (
-                <ListGroup.Item key={p.id} className="d-flex justify-content-between align-items-center">
-                  {p.name} | Punkty: {p.points} | Data: {p.date}
-                  <Button size="sm" variant="outline-dark" onClick={()=>removePenalty(p.id)}>Usuń</Button>
-                </ListGroup.Item>
               ))}
-            </ListGroup>
-            <Form className="d-flex gap-2 flex-wrap mb-3">
-              <Form.Control placeholder="Nazwa kary" value={newPenalty.name} onChange={e=>setNewPenalty({...newPenalty,name:e.target.value})} />
-              <Form.Control type="number" value={newPenalty.points} onChange={e=>setNewPenalty({...newPenalty,points:parseInt(e.target.value)})} />
-              <Form.Control type="date" value={newPenalty.date} onChange={e=>setNewPenalty({...newPenalty,date:e.target.value})} />
-              <Button variant="danger" onClick={addPenalty}>Dodaj karę</Button>
-            </Form>
-          </Col>
-          <Col>
-            <h4>🏆 Nagrody</h4>
-            <ListGroup className="mb-3">
-              {rewards.map(r => (
-                <ListGroup.Item key={r.id} className="d-flex justify-content-between align-items-center">
-                  {r.name} | Punkty: {r.points} | Data: {r.date}
-                  <Button size="sm" variant="outline-dark" onClick={()=>removeReward(r.id)}>Usuń</Button>
-                </ListGroup.Item>
-              ))}
-            </ListGroup>
-            <Form className="d-flex gap-2 flex-wrap mb-3">
-              <Form.Control placeholder="Nazwa nagrody" value={newReward.name} onChange={e=>setNewReward({...newReward,name:e.target.value})} />
-              <Form.Control type="number" value={newReward.points} onChange={e=>setNewReward({...newReward,points:parseInt(e.target.value)})} />
-              <Form.Control type="date" value={newReward.date} onChange={e=>setNewReward({...newReward,date:e.target.value})} />
-              <Button variant="success" onClick={addReward}>Dodaj nagrodę</Button>
-            </Form>
-          </Col>
-        </Row>
+            </tbody>
+          )
+        })}
+      </tbody>
+    </Table>
+  );
 
-        <h3 className="mt-4">📊 Podsumowanie: {totalPoints()} punktów</h3>
-        <div className="d-flex gap-3 mt-3">
-  <Button variant="success" onClick={saveScores}>💾 Zapisz punkty zadań</Button>
-</div>
+  const renderLegend = () => (
+    <Accordion className="mb-4">
+      <Accordion.Item eventKey="0">
+        <Accordion.Header>📖 Legenda: system kar i nagród</Accordion.Header>
+        <Accordion.Body>
+          <ul>
+            <li><b>Punkty zadania:</b> od -3 do +3</li>
+            <li><b>Kary:</b> punkty ujemne</li>
+            <li><b>Nagrody:</b> punkty dodatnie</li>
+            <li><b>Całkowity wynik:</b> suma punktów zadań, kar i nagród</li>
+          </ul>
+        </Accordion.Body>
+      </Accordion.Item>
+    </Accordion>
+  );
 
+  return (
+    <>
+      <NavbarWithSettings user={user} />
+
+      <Container>
+        <Tabs activeKey={activeChild} onSelect={k => setActiveChild(k)} className="mb-3">
+          {children.map(c => (
+            <Tab eventKey={c.id} title={c.name} key={c.id}>
+              <h3 className="text-center mb-4">✅ Tygodniowa Checklista Obowiązków</h3>
+              {renderLegend()}
+              {renderTable()}
+
+              <Row className="mt-5">
+                <Col>
+                  <h4>⚠️ Kary</h4>
+                  <ListGroup>
+                    {penalties.map(p => (
+                      <ListGroup.Item key={p.id} className="d-flex justify-content-between align-items-center flex-wrap">
+                        <div>{p.name} | Punkty: <b>{p.points}</b> | Data: <b>{p.date}</b></div>
+                        <Button size="sm" variant="outline-dark" onClick={()=>removePenalty(p.id)}>Usuń</Button>
+                      </ListGroup.Item>
+                    ))}
+                  </ListGroup>
+
+                  <Form className="mt-2" onSubmit={e=>{e.preventDefault(); addPenalty(e.target.name.value, parseInt(e.target.points.value), e.target.date.value); e.target.reset();}}>
+                    <Row className="g-2">
+                      <Col><Form.Control name="name" placeholder="Nazwa kary"/></Col>
+                      <Col><Form.Control name="points" type="number" placeholder="Punkty ujemne" defaultValue={-1}/></Col>
+                      <Col><Form.Control name="date" type="date"/></Col>
+                      <Col><Button type="submit" variant="danger">Dodaj karę</Button></Col>
+                    </Row>
+                  </Form>
+                </Col>
+
+                <Col>
+                  <h4>🏆 Nagrody</h4>
+                  <ListGroup>
+                    {rewards.map(r => (
+                      <ListGroup.Item key={r.id} className="d-flex justify-content-between align-items-center flex-wrap">
+                        <div>{r.name} | Punkty: <b>{r.points}</b> | Data: <b>{r.date}</b></div>
+                        <Button size="sm" variant="outline-dark" onClick={()=>removeReward(r.id)}>Usuń</Button>
+                      </ListGroup.Item>
+                    ))}
+                  </ListGroup>
+
+                  <Form className="mt-2" onSubmit={e=>{e.preventDefault(); addReward(e.target.name.value, parseInt(e.target.points.value), e.target.date.value); e.target.reset();}}>
+                    <Row className="g-2">
+                      <Col><Form.Control name="name" placeholder="Nazwa nagrody"/></Col>
+                      <Col><Form.Control name="points" type="number" placeholder="Punkty dodatnie" defaultValue={1}/></Col>
+                      <Col><Form.Control name="date" type="date"/></Col>
+                      <Col><Button type="submit" variant="success">Dodaj nagrodę</Button></Col>
+                    </Row>
+                  </Form>
+                </Col>
+              </Row>
+
+              <h3 className="mt-4 text-center">📊 Podsumowanie: {totalPoints} punktów</h3>
+            </Tab>
+          ))}
+        </Tabs>
       </Container>
     </>
-  )
+  );
 }
