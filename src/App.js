@@ -3,10 +3,11 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-d
 import { auth, db } from "./firebase";
 import Login from "./Login";
 import Register from "./Register";
+import NewAccountConfirmation from "./NewAccountConfirmation";
 import ChildWizard from "./ChildWizard";
 import ParentDashboard from "./ParentDashboard";
 import Coupons from "./Coupons";
-import NewAccountConfirmation from "./NewAccountConfirmation";
+import NavbarWithSettings from "./NavbarWithSettings";
 import { Container, Spinner } from "react-bootstrap";
 
 function App() {
@@ -18,10 +19,14 @@ function App() {
     const unsubscribe = auth.onAuthStateChanged(async (u) => {
       setUser(u);
       setLoading(false);
+
       if (u) {
-        // Pobierz flagę z Firestore: czy rodzic zakończył konfigurację dzieci
+        // Pobieramy flagę czy rodzic skonfigurował dzieci
         const userDoc = await db.collection("users").doc(u.uid).get();
-        setSetupDone(userDoc.exists && userDoc.data().setupDone);
+        if (userDoc.exists()) {
+          const childIds = userDoc.data().childIds || [];
+          setSetupDone(childIds.length > 0);
+        }
       }
     });
     return unsubscribe;
@@ -37,23 +42,34 @@ function App() {
 
   return (
     <Router>
+      <NavbarWithSettings user={user} />
       <Routes>
-        <Route path="/login" element={!user ? <Login onLogin={setUser} /> : <Navigate to="/" />} />
-        <Route path="/register" element={!user ? <Register /> : <Navigate to="/" />} />
-        <Route path="/confirmation" element={<NewAccountConfirmation />} />
+        {!user && (
+          <>
+            <Route path="/login" element={<Login onLogin={setUser} />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/confirm" element={<NewAccountConfirmation />} />
+            <Route path="*" element={<Navigate to="/login" />} />
+          </>
+        )}
 
-        {/* Chronione routingi */}
-        <Route
-          path="/"
-          element={
-            user ? (setupDone ? <ParentDashboard user={user} /> : <ChildWizard parentId={user.uid} onFinish={() => setSetupDone(true)} />)
-                 : <Navigate to="/login" />
-          }
-        />
-        <Route path="/coupons" element={user ? <Coupons user={user} /> : <Navigate to="/login" />} />
+        {user && !setupDone && (
+          <>
+            <Route
+              path="/wizard"
+              element={<ChildWizard parentId={user.uid} onFinish={() => setSetupDone(true)} />}
+            />
+            <Route path="*" element={<Navigate to="/wizard" />} />
+          </>
+        )}
 
-        {/* Fallback */}
-        <Route path="*" element={<Navigate to="/" />} />
+        {user && setupDone && (
+          <>
+            <Route path="/dashboard" element={<ParentDashboard />} />
+            <Route path="/coupons" element={<Coupons parentId={user.uid} />} />
+            <Route path="*" element={<Navigate to="/dashboard" />} />
+          </>
+        )}
       </Routes>
     </Router>
   );
